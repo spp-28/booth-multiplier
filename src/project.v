@@ -1,62 +1,64 @@
-/*
- * Booth Multiplier Example for TinyTapeout
- * Author: Your Name
- * SPDX-License-Identifier: Apache-2.0
- */
+// File: project.v
+// Multi-cycle Booth Multiplier for TinyTapeout
 
 `default_nettype none
 
 module tt_um_example (
     input  wire [7:0] ui_in,    // Multiplicand
-    output wire [7:0] uo_out,   // Lower 8 bits of product
     input  wire [7:0] uio_in,   // Multiplier
-    output wire [7:0] uio_out,  // Not used
-    output wire [7:0] uio_oe,   // Not used
-    input  wire       ena,      // always 1 when powered
-    input  wire       clk,      // clock (not used for pure combinational)
-    input  wire       rst_n     // reset_n (not used)
+    input  wire       clk,       // Clock
+    input  wire       rst_n,     // Active-low reset
+    input  wire       ena,       // Enable (can ignore if always 1)
+    output reg  [7:0] uo_out,   // Output (LSB of product)
+    output wire [7:0] uio_out,
+    output wire [7:0] uio_oe
 );
 
-  // Signed inputs
-  wire signed [7:0] multiplicand = ui_in;
-  wire signed [7:0] multiplier   = uio_in;
+    // unused IOs
+    assign uio_out = 0;
+    assign uio_oe  = 0;
 
-  // Full product (16-bit signed)
-  wire signed [15:0] product;
+    // Internal registers
+    reg [15:0] A;        // Accumulator + product
+    reg [7:0] Q;         // Multiplier
+    reg Q_1;             // Q-1 for Booth
+    reg [3:0] count;     // Iteration counter
+    reg [7:0] M;         // Multiplicand
+    reg busy;
 
-  assign product = booth_mult(multiplicand, multiplier);
-
-  // Send out lower 8 bits only
-  assign uo_out  = product[7:0];
-  assign uio_out = 0;
-  assign uio_oe  = 0;
-
-  // Function implementing Booth’s algorithm
-  function signed [15:0] booth_mult;
-    input signed [7:0] mcand;
-    input signed [7:0] mplier;
-    integer i;
-    reg [16:0] acc;   // accumulator with extra bit
-    reg [8:0]  q;     // multiplier with Q-1 bit
-    begin
-      acc = 0;
-      q   = {mplier, 1'b0}; // append Q-1 = 0
-
-      for (i = 0; i < 8; i = i + 1) begin
-        case (q[1:0])
-          2'b01: acc[16:9] = acc[16:9] + mcand; // add multiplicand
-          2'b10: acc[16:9] = acc[16:9] - mcand; // subtract multiplicand
-          default: ; // do nothing
-        endcase
-
-        // arithmetic right shift {acc, q}
-        {acc, q} = {acc, q} >>> 1;
-      end
-      booth_mult = {acc, q[8:1]}; // 16-bit result
+    always @(posedge clk or negedge rst_n) begin
+        if (!rst_n) begin
+            A     <= 0;
+            Q     <= 0;
+            Q_1   <= 0;
+            M     <= 0;
+            count <= 0;
+            uo_out<= 0;
+            busy  <= 0;
+        end else if (ena) begin
+            if (!busy) begin
+                // Load operands and start multiplication
+                A     <= 0;
+                Q     <= uio_in;  // Multiplier
+                M     <= ui_in;   // Multiplicand
+                Q_1   <= 0;
+                count <= 8;       // 8 iterations for 8-bit
+                busy  <= 1;
+            end else if (count > 0) begin
+                // Booth algorithm
+                case ({Q[0], Q_1})
+                    2'b01: A <= A + {8'b0, M};   // A = A + M
+                    2'b10: A <= A - {8'b0, M};   // A = A - M
+                endcase
+                // Arithmetic right shift {A, Q, Q_1}
+                {A, Q, Q_1} <= {A[15], A, Q} >>> 1;
+                count <= count - 1;
+            end else begin
+                // Multiplication done
+                uo_out <= Q;  // LSB 8-bit of the product
+                busy   <= 0;
+            end
+        end
     end
-  endfunction
-
-  // Prevent unused input warnings
-  wire _unused = &{ena, clk, rst_n, 1'b0};
 
 endmodule
