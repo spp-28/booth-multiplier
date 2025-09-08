@@ -7,7 +7,7 @@ project:
   language:     "Verilog"
   clock_hz:     100000000   # 100 MHz clock
   tiles:        "1x1"
-  top_module:   "tt_um_booth_mult"
+  top_module:   "tt_um_example"
 
   source_files:
     - "project.v"
