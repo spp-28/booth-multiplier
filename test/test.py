@@ -8,33 +8,44 @@ from cocotb.triggers import ClockCycles
 
 @cocotb.test()
 async def test_project(dut):
-    dut._log.info("Start")
+    dut._log.info("Start cocotb testbench for Booth multiplier")
 
-    # Set the clock period to 10 us (100 KHz)
+    # Clock generation: 100 kHz -> 10 us period
     clock = Clock(dut.clk, 10, units="us")
     cocotb.start_soon(clock.start())
 
-    # Reset
-    dut._log.info("Reset")
+    # Apply reset
     dut.ena.value = 1
     dut.ui_in.value = 0
     dut.uio_in.value = 0
     dut.rst_n.value = 0
-    await ClockCycles(dut.clk, 10)
+    await ClockCycles(dut.clk, 5)
     dut.rst_n.value = 1
+    dut._log.info("Reset released")
 
-    dut._log.info("Test project behavior")
+    # ----------- Test cases -------------
+    test_vectors = [
+        (10,  3,  30),   # 10 * 3 = 30
+        (20,  2,  40),   # 20 * 2 = 40
+        (15, -2, -30),   # signed multiply
+        (-8, -5,  40),   # signed multiply
+        (7,   0,   0),   # anything * 0 = 0
+    ]
 
-    # Set the input values you want to test
-    dut.ui_in.value = 20
-    dut.uio_in.value = 30
+    for multiplicand, multiplier, expected in test_vectors:
+        dut.ui_in.value = multiplicand & 0xFF  # 8-bit signed input
+        dut.uio_in.value = multiplier & 0xFF   # 8-bit signed input
+        await ClockCycles(dut.clk, 2)
 
-    # Wait for one clock cycle to see the output values
-    await ClockCycles(dut.clk, 1)
+        # Read output (8-bit, lower product only)
+        result = dut.uo_out.value.signed_integer
 
-    # The following assersion is just an example of how to check the output values.
-    # Change it to match the actual expected output of your module:
-    assert dut.uo_out.value == 50
+        dut._log.info(f"Inputs: {multiplicand} * {multiplier}, "
+                      f"DUT Output (8-bit) = {result}, "
+                      f"Expected LSBs = {expected & 0xFF}")
 
-    # Keep testing the module by changing the input values, waiting for
-    # one or more clock cycles, and asserting the expected output values.
+        # Compare only the lower 8 bits (since uo_out is 8 bits wide)
+        assert result == (expected & 0xFF), \
+            f"Mismatch: {multiplicand} * {multiplier}, got {result}, expected {(expected & 0xFF)}"
+
+    dut._log.info("All test cases passed ✅")
