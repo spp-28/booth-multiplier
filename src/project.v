@@ -1,27 +1,62 @@
 /*
- * Copyright (c) 2024 Your Name
+ * Booth Multiplier Example for TinyTapeout
+ * Author: Your Name
  * SPDX-License-Identifier: Apache-2.0
  */
 
 `default_nettype none
 
 module tt_um_example (
-    input  wire [7:0] ui_in,    // Dedicated inputs
-    output wire [7:0] uo_out,   // Dedicated outputs
-    input  wire [7:0] uio_in,   // IOs: Input path
-    output wire [7:0] uio_out,  // IOs: Output path
-    output wire [7:0] uio_oe,   // IOs: Enable path (active high: 0=input, 1=output)
-    input  wire       ena,      // always 1 when the design is powered, so you can ignore it
-    input  wire       clk,      // clock
-    input  wire       rst_n     // reset_n - low to reset
+    input  wire [7:0] ui_in,    // Multiplicand
+    output wire [7:0] uo_out,   // Lower 8 bits of product
+    input  wire [7:0] uio_in,   // Multiplier
+    output wire [7:0] uio_out,  // Not used
+    output wire [7:0] uio_oe,   // Not used
+    input  wire       ena,      // always 1 when powered
+    input  wire       clk,      // clock (not used for pure combinational)
+    input  wire       rst_n     // reset_n (not used)
 );
 
-  // All output pins must be assigned. If not used, assign to 0.
-  assign uo_out  = ui_in + uio_in;  // Example: ou_out is the sum of ui_in and uio_in
+  // Signed inputs
+  wire signed [7:0] multiplicand = ui_in;
+  wire signed [7:0] multiplier   = uio_in;
+
+  // Full product (16-bit signed)
+  wire signed [15:0] product;
+
+  assign product = booth_mult(multiplicand, multiplier);
+
+  // Send out lower 8 bits only
+  assign uo_out  = product[7:0];
   assign uio_out = 0;
   assign uio_oe  = 0;
 
-  // List all unused inputs to prevent warnings
+  // Function implementing Booth’s algorithm
+  function signed [15:0] booth_mult;
+    input signed [7:0] mcand;
+    input signed [7:0] mplier;
+    integer i;
+    reg [16:0] acc;   // accumulator with extra bit
+    reg [8:0]  q;     // multiplier with Q-1 bit
+    begin
+      acc = 0;
+      q   = {mplier, 1'b0}; // append Q-1 = 0
+
+      for (i = 0; i < 8; i = i + 1) begin
+        case (q[1:0])
+          2'b01: acc[16:9] = acc[16:9] + mcand; // add multiplicand
+          2'b10: acc[16:9] = acc[16:9] - mcand; // subtract multiplicand
+          default: ; // do nothing
+        endcase
+
+        // arithmetic right shift {acc, q}
+        {acc, q} = {acc, q} >>> 1;
+      end
+      booth_mult = {acc, q[8:1]}; // 16-bit result
+    end
+  endfunction
+
+  // Prevent unused input warnings
   wire _unused = &{ena, clk, rst_n, 1'b0};
 
 endmodule
